@@ -13,19 +13,50 @@ namespace PartsParserApi.Controllers
     [ApiController]
     public class GetPartsController : ControllerBase
     {
-        SectionContext db;
-        public GetPartsController(SectionContext context)
+        TreeNodeContext db;
+        public GetPartsController(TreeNodeContext context)
         {
             db = context;
         }
 
-        [HttpGet("{id}")]
-        public async Task<ActionResult<Section>> Get(int id)
+        public List<TreeNode> Get()
         {
-            Section section = await db.Sections.FirstOrDefaultAsync(x => x.ID == id);
-            if (section == null)
+            List<TreeNode> treeNodes = db.TreeNodes.Where(x => x.Parent == null).Select(x => x).ToList();
+            if (treeNodes == null)
                 return null;
-            return new ObjectResult(section);
+            return treeNodes;
+        }
+
+        [HttpGet("{id}")]
+        public List<TreeNode> Get(int id)
+        {
+            List<TreeNode> treeNodes = db.TreeNodes.Where(x => x.Parent.ID == id ).Select(x => x).ToList();
+            if (treeNodes == null)
+                return null;
+            return treeNodes;
+        }
+
+        [HttpGet("{id}/{id2}")]
+        public List<TreeNode> Get(int id, int id2)
+        {
+            List<TreeNode> treeNodes = db.TreeNodes.Where(x => x.Parent.ID == id2).ToList();
+
+            if (treeNodes == null)
+                return null;
+            return treeNodes;
+        }
+
+        [HttpGet("{id}/{id2}/{id3}")]
+        public List<Section> Get(int id,int id2, int id3)
+        {
+            var res = db.Sections.Where(x => x.ID == id3);
+
+            List<Section> sections = db.Sections
+                .Where(x => x.ParentNode.ID == id3)                
+                .Select(x => x).ToList();
+            if (sections == null)
+                return null;
+            return sections;
         }
     }
 }

@@ -1,83 +1,97 @@
-﻿using AngleSharp.Dom;
-using AngleSharp.Html.Parser;
-using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using PartsParserApi.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using PartsParserApi.Models;
+using HtmlAgilityPack;
 using System.Net.Http;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
+using AngleSharp.Html.Parser;
+using AngleSharp.Dom;
 
 namespace PartsParserApi.Controllers
 {
+    [Route("api/[controller]")]
     [ApiController]
-    [Route("[controller]")]
-    public class ParseController : ControllerBase
+    public class ParserController : ControllerBase
     {
         public string URL { get; private set; } = "https://www.avtoall.ru/catalog/paz-20/avtobusy-36/paz_672m-393/";
         private HttpClient httpClient;
         private HtmlParser parser;
-        SectionContext db;
+        TreeNodeContext db;
 
-        public ParseController(SectionContext context)
+        public ParserController(TreeNodeContext context)
         {
             httpClient = new HttpClient();
             httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:83.0) Gecko/20100101 Firefox/83.0");
             db = context;
-        }
-    
-        [HttpGet]
-        public string Get()
-        {            
-            if (!db.Sections.Any())
-            {
-                List<List<Section>> sections = Parse();
-
-                foreach (var item1 in sections)
-                {
-                    foreach (var item in item1)
-                    {
-                        db.Sections.Add(item);
-                    }
-                }
-                db.SaveChanges();
-            }
-
-            return "OK";
-        }
-
-        public List<List<Section>> Parse()
-        {
-            string html = GetHTML();
-            List<string> catalogLinks;
-
             parser = new HtmlParser();
-            var parseResult = parser.ParseDocument(html).QuerySelectorAll("ul.catalog-groups-tree");
-            catalogLinks = GetCatalogLinks(parseResult.First().InnerHtml);
-
-            List<List<Section>> resultParseList = new List<List<Section>>();
-            foreach (var link in catalogLinks)
-            {
-                resultParseList.Add(ParseDetailsInSection(link));
-            }
-            return resultParseList;
         }
+
+        [HttpGet]
+        public List<TreeNode> Get()
+        {
+            List<TreeNode> parsedTree = ParseTree();
+
+            foreach (var item in parsedTree)
+            {
+                db.TreeNodes.Add(item);
+            }
+            db.SaveChanges();
+            return parsedTree;
+        }
+
+        private List<TreeNode> ParseTree()
+        {
+            List<TreeNode> result = new List<TreeNode>();
+            HtmlDocument doc = new HtmlDocument();
+            doc.LoadHtml(GetHTML());
+            var MainTree = doc.DocumentNode.SelectSingleNode("//*[@id=\"autoparts_tree\"]");
+            var nodesCount = MainTree.ChildNodes[1].ChildNodes.Count;
+            for (int i = 1; i < nodesCount; i++)
+            {
+                var firstNode = MainTree.ChildNodes[1].ChildNodes[i];
+                string firstNodeName = firstNode.ChildNodes[1].InnerText;
+                TreeNode firstTreeNode = new TreeNode();
+                firstTreeNode.Text = firstNodeName;
+
+                for (int j = 0; j < firstNode.ChildNodes[3].ChildNodes.Count; j++)
+                {
+                    var secondNode = firstNode.ChildNodes[3].ChildNodes[j];
+                    string secondNodeName = secondNode.ChildNodes[1].InnerText;
+                    TreeNode secondTreeNode = new TreeNode();
+                    secondTreeNode.Text = secondNodeName;
+                    secondTreeNode.Parent = firstTreeNode;
+
+                    for (int k = 0; k < secondNode.ChildNodes[3].ChildNodes.Count; k++)
+                    {
+                        var thirdNode = secondNode.ChildNodes[3].ChildNodes[k];
+                        string thirdNodeName = thirdNode.ChildNodes[1].InnerText;
+                        var link = thirdNode.ChildNodes[1].Attributes[1].Value;
+                        TreeNode thirdTreeNode = new TreeNode();
+                        thirdTreeNode.Text = thirdNodeName;
+                        thirdTreeNode.Sections = ParseDetailsInSection(thirdTreeNode, link);                        
+                        thirdTreeNode.Parent = secondTreeNode;
+                        secondTreeNode.Nodes.Add(thirdTreeNode);
+                    }
+                    firstTreeNode.Nodes.Add(secondTreeNode);                    
+                }
+                result.Add(firstTreeNode);
+
+
+
+                //if (result.Count >= 1) return result; //убрать в релизе
+            }
+            return result;
+        }
+
         private string GetHTML()
         {
             return httpClient.GetStringAsync(URL).Result;
         }
-        private List<string> GetCatalogLinks(string html)
-        {
-            List<string> result = new List<string>();
-            foreach (Match m in Regex.Matches(html, @"<a\s*data-id=.gr[0-9]*.\s*href=.(.*?)"""))
-            {
-                result.Add(m.Groups[1].Value);
-            }
-            return result;
-        }
-        private List<Section> ParseDetailsInSection(string linkToSection)
+
+        private List<Section> ParseDetailsInSection(TreeNode treeNode, string linkToSection)
         {
             List<Section> result = new List<Section>();
             URL = "https://www.avtoall.ru" + linkToSection;
@@ -100,6 +114,7 @@ namespace PartsParserApi.Controllers
                     section.Price = availableParts.First().GetElementsByClassName("price-internet")[0].TextContent;
                     section.SectionPicturePatch = currentSectionPicturePatch;
                     section.DetailPicturePatch = item.QuerySelectorAll("img.lazy").Select(el => el.GetAttribute("src")).First();
+                    section.Available = true;
                     result.Add(section);
                 }
             }
@@ -112,10 +127,11 @@ namespace PartsParserApi.Controllers
                 section.Name = item.GetElementsByClassName("name")[0].TextContent;
                 section.CountPerModel = item.GetElementsByClassName("count")[0].TextContent.Trim();
                 section.SectionPicturePatch = currentSectionPicturePatch;
+                section.Available = false;
+                section.ParentNode = treeNode;
                 result.Add(section);
             }
-
             return result;
         }
-    }
+    }    
 }

@@ -14,5 +14,7 @@ namespace PartsParserApi.Models
         public string DetailPicturePatch { get; set; }
         public string SectionPicturePatch { get; set; }
         public string Price { get; set; }
+        public bool Available { get; set; }
+        public TreeNode ParentNode { get; set; }
     }
 }

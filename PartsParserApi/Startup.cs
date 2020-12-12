@@ -28,6 +28,7 @@ namespace PartsParserApi
         {
             string con = "Server=(localdb)\\MSSQLLocalDB;Database=PartsDB;Trusted_Connection=True;";
             services.AddDbContext<SectionContext>(options => options.UseSqlServer(con));
+            services.AddDbContext<TreeNodeContext>(options => options.UseSqlServer(con));
 
             services.AddControllers(); 
         }
